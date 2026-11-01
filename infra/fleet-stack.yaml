@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Robot fleet telemetry: an SQS queue with a dead-letter queue, and a DynamoDB table holding
+  each robot's latest state. PostgreSQL (event history) is provisioned separately.
+
+Parameters:
+  Prefix:
+    Type: String
+    Default: fleet
+  VisibilityTimeout:
+    Type: Number
+    Default: 30
+    Description: Seconds a received message stays hidden before SQS delivers it again.
+  MaxReceiveCount:
+    Type: Number
+    Default: 3
+    Description: Deliveries before a message that keeps failing is moved to the dead-letter queue.
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: {"Fn::Sub": "${Prefix}-telemetry-dlq"}
+      MessageRetentionPeriod: 1209600
+
+  TelemetryQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: {"Fn::Sub": "${Prefix}-telemetry"}
+      VisibilityTimeout: {"Ref": VisibilityTimeout}
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: {"Fn::GetAtt": [DeadLetterQueue, Arn]}
+        maxReceiveCount: {"Ref": MaxReceiveCount}
+
+  RobotStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: {"Fn::Sub": "${Prefix}-robot-state"}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: robot_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: robot_id, KeyType: HASH}
+
+Outputs:
+  QueueUrl:
+    Value: {"Ref": TelemetryQueue}
+  DeadLetterQueueUrl:
+    Value: {"Ref": DeadLetterQueue}
+  TableName:
+    Value: {"Ref": RobotStateTable}

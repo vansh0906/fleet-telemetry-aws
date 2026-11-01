@@ -1,0 +1,35 @@
+name: fleet-ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fleet
+          POSTGRES_PASSWORD: fleet
+          POSTGRES_DB: fleet
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fleet" --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      FLEET_PG_DSN: host=127.0.0.1 port=5432 user=fleet password=fleet dbname=fleet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests -t . -v
+      - name: All experiments and the requirement table
+        run: python run_all.py | tee results.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results
+          path: |
+            results.txt
+            logs/
